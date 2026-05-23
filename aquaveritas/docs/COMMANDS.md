@@ -2453,6 +2453,155 @@ Install with:
 
 ---
 
+## 15. Weekly Tile Refresh (`scripts/refresh_tiles.py` + Modal)
+
+Implements Option 2 from `docs/LIVE_DATA_OPTIONS.md`: a weekly job that
+fetches a fresh Sentinel-2 pass per monitored site, runs the fine-tuned
+GGUF over it, writes new WebPs + a new `predictions.json`, patches each
+site's `capturedAt`, and opens a PR back to `main`. The web app keeps
+serving static assets — no runtime cost — but the assets are never more
+than 7 days old.
+
+### Refresh one site locally (smoke test)
+
+**Purpose:** Confirms the SimSat stack, llama-server, and the inference
+path all line up before scheduling. One site is enough; full sweep is the
+same code path.
+
+**Command:**
+```bash
+python3 scripts/refresh_tiles.py --site lake_chad
+```
+
+**Sample output:**
+```
+=== AquaVeritas weekly tile refresh — 2026-05-23 ===
+  sites:      1
+  llama:      http://localhost:8080
+  simsat:     http://localhost:9005
+  dry-run:    False
+
+  → Lake Chad                ✓ shrinking  crop=moderate webp=  62kB
+
+Wrote app_web/src/lib/predictions.json
+
+=== Done: 1/1 succeeded ===
+```
+
+**Notes:**
+- Requires `docker compose up -d` (SimSat + Postgres on 9005/5433) AND
+  llama-server running on :8080. The script pre-flights neither — it'll
+  surface the connection error in the per-site log line and continue.
+- Per-site failures are isolated: one CDSE miss doesn't abort the run.
+  Exit code is 0 as long as ≥1 site refreshed; 1 only if all 20 failed.
+
+### Dry-run the full sweep (no inference, no writes)
+
+**Purpose:** Plan-only mode — exercises the fetch path against the local
+SimSat stack and reports which sites returned imagery, without consuming
+llama-server time or touching `predictions.json` / `sites.ts`.
+
+**Command:**
+```bash
+python3 scripts/refresh_tiles.py --dry-run
+```
+
+**Sample output:**
+```
+=== AquaVeritas weekly tile refresh — 2026-05-23 ===
+  sites:      20
+  ...
+  → Lake Chad                [dry-run] would refresh from pass at 2026-05-23T05:42Z
+  → Aral Sea                 [dry-run] would refresh from pass at 2026-05-23T05:42Z
+  → Lake Urmia               no core image (CDSE returned nothing in window)
+  ...
+=== Done: 18/20 succeeded ===
+Failures:
+  ✗ lake_urmia: no core image (CDSE returned nothing in window)
+  ✗ congo_delta: no core image (CDSE returned nothing in window)
+```
+
+### Full refresh (writes the diff)
+
+**Command:**
+```bash
+python3 scripts/refresh_tiles.py
+```
+
+Mutates:
+- `app_web/public/sample_tiles/<site>.webp` — resized to 640px, ~50-80kB each
+- `app_web/src/lib/predictions.json` — 11-field prediction per refreshed site,
+  plus `_meta.last_refreshed` + `refresh_run_id`
+- `app_web/src/lib/sites.ts` — each refreshed site's `capturedAt` bumped to today
+
+The web app picks up `predictions.json` at build time (it's a static import
+in `app_web/src/lib/inference.ts`), so the next `npm run build` (or
+Vercel deploy on PR merge) ships the new assessments.
+
+### Deploy the Modal cron (one-time)
+
+**Purpose:** Ships `scripts/modal_refresh_tiles.py` as a Modal app. The
+function is scheduled (`Cron("0 6 * * 1")` — Mondays 06:00 UTC) and runs
+inside a container that has llama.cpp + the SimSat docker stack baked in.
+
+**Commands:**
+```bash
+# 1. Auth Modal
+modal token new
+
+# 2. Mount the GGUF model files in a Modal volume
+modal volume create aquaveritas-gguf
+modal volume put aquaveritas-gguf \
+  data/models/aquaveritas-backbone-Q8_0.gguf /backbone.gguf
+modal volume put aquaveritas-gguf \
+  data/models/aquaveritas-mmproj-F16.gguf   /mmproj.gguf
+
+# 3. Provide a GitHub token for PR opening (needs `repo` + `pull_request` scope)
+modal secret create gh-token-aquaveritas GH_TOKEN=ghp_xxxxxxxxxxxx
+
+# 4. Deploy
+modal deploy scripts/modal_refresh_tiles.py
+```
+
+**Sample output (modal deploy):**
+```
+✓ Created objects.
+├── 🔨 Created mount /opt/llama.cpp
+├── 🔨 Created function refresh (cron: 0 6 * * 1).
+└── 🔨 Created function main.
+✓ App deployed in 18.2s! 🎉
+
+View Deployment: https://modal.com/apps/<user>/aquaveritas-refresh
+```
+
+**Notes:**
+- First deploy builds the image (~5 min: llama.cpp compile). Subsequent
+  deploys reuse cached layers.
+- The cron is registered on Modal's side — no further action needed for
+  it to fire weekly. Inspect with `modal app list`.
+
+### Manual trigger (no waiting for Monday)
+
+**Purpose:** Fires the same `refresh` function once, on demand. Use this
+to verify the Modal deploy worked, or to push out an unscheduled refresh.
+
+**Command:**
+```bash
+modal run scripts/modal_refresh_tiles.py::main
+```
+
+**Sample output:**
+```
+Refresh complete: {'run_id': 'refresh-20260523-061205',
+                   'pr_opened': True,
+                   'pr_url': 'https://github.com/devleks/AquaVeritas/pull/12'}
+```
+
+The PR will contain the WebP, JSON, and sites.ts diffs. Vercel auto-deploys
+on merge.
+
+---
+
 ## Quick Reference
 
 | Command | Stage | Duration |
@@ -2486,11 +2635,24 @@ Install with:
 | `git diff --stat origin/main main` | Distinguish SHA-only vs real divergence | seconds |
 | `git reset --hard origin/main && git cherry-pick <sha>` | Resolve SHA-only divergence | seconds |
 | `git push --set-upstream origin main` | First push after re-creating origin | seconds |
+| `refresh_tiles.py --site lake_chad` | Smoke-test weekly refresh on one site | ~30s |
+| `refresh_tiles.py --dry-run` | Plan-only full refresh, no inference / writes | ~5 min |
+| `refresh_tiles.py` | Full weekly refresh (writes WebPs + JSON + sites.ts) | ~15-30 min |
+| `modal deploy scripts/modal_refresh_tiles.py` | Ship weekly cron to Modal | ~5 min first time |
+| `modal run scripts/modal_refresh_tiles.py::main` | Fire weekly refresh on-demand | ~20-30 min |
 
 ---
 
 ## Changelog
 
+- **2026-05-23** — Added §15 Weekly Tile Refresh (Option 2 from
+  `docs/LIVE_DATA_OPTIONS.md`). `scripts/refresh_tiles.py` is the
+  workhorse: SimSat fetch → llama-server inference → WebP + predictions.json
+  + sites.ts diff. `scripts/modal_refresh_tiles.py` wraps it in a Modal
+  cron container that boots the SimSat stack + llama-server in-process,
+  then opens a PR via `gh`. Also moved web-app predictions from inline
+  TS to `app_web/src/lib/predictions.json` so the refresh has a clean
+  write target; loaded back through `inference.ts` with type-cast.
 - **2026-05-20** — Added §12 Web App (Next.js 16 scaffold, dependency install,
   dev server foreground + background, production build, route health check,
   served-CSS verification), §13 Demo Tile Bundle (`scripts/copy_web_samples.py`

@@ -101,12 +101,25 @@ export interface LoadProgress {
 }
 
 // ── Pre-computed reference outputs for all 20 monitored sites ────────────────
-// Each entry is the fine-tuned model's assessment of that site's bundled
-// WebP tile (see scripts/copy_web_samples.py for the date selection per
-// site). Source: data/reports/comparison.json for the five featured sites,
-// extrapolated from the site descriptions in src/aquaveritas/locations.py
-// for the rest.
-const REFERENCE_OUTPUTS: Record<string, Prediction> = {
+// Source of truth lives in `predictions.json` — written initially from the
+// fine-tuned model's eval run, and overwritten weekly by the Modal refresh
+// job (`scripts/refresh_tiles.py` + `scripts/modal_refresh_tiles.py`, see
+// docs/COMMANDS.md §15). The JSON includes a leading `_meta` block which
+// we strip here; everything else is a `siteId → Prediction` mapping.
+import PREDICTIONS_RAW from "./predictions.json";
+
+// Double-cast via unknown because JSON imports widen literal types to string,
+// which the Prediction union (e.g. "shrinking" | "dry" | ...) rejects.
+const { _meta: PREDICTIONS_META, ...REFERENCE_OUTPUTS_RAW } = PREDICTIONS_RAW as unknown as {
+  _meta: { schema_version: number; source: string; last_refreshed: string; refresh_run_id: string | null };
+} & Record<string, Prediction>;
+const REFERENCE_OUTPUTS: Record<string, Prediction> = REFERENCE_OUTPUTS_RAW;
+export { PREDICTIONS_META };
+
+// Legacy inline table preserved below as a fallback reference. NOT exported.
+// Safe to delete once predictions.json has gone through one refresh cycle
+// and we trust the file-based path.
+const _LEGACY_REFERENCE_OUTPUTS: Record<string, Prediction> = {
   // ── Chronic shrinkage ─────────────────────────────────────────────────────
   lake_chad: {
     water_extent_status: "shrinking", flood_risk: "none",
