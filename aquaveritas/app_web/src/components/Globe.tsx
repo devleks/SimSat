@@ -117,6 +117,13 @@ export default function Globe({ selectedId, onSelectChange }: GlobeProps) {
       },
       center: [14.25, 12.95], // Lake Chad
       zoom: 1.5,
+      minZoom: 1.0,
+      // maxBounds constrains the viewport centre so the earth cannot be
+      // dragged fully off-screen. Globe projection wraps longitude, but
+      // without a latitude bound the user can pan north/south until the
+      // sphere sits in a corner. [-180,-85,180,85] is the full Mercator
+      // extent; the globe will always be roughly centred.
+      maxBounds: [[-180, -85], [180, 85]],
       pitch: 0,
       bearing: 0,
       attributionControl: { compact: true },
@@ -153,7 +160,8 @@ export default function Globe({ selectedId, onSelectChange }: GlobeProps) {
           type: "circle",
           source: "sites",
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 10, 5, 22],
+            // Radii reduced 25% from original (10→7.5, 22→16.5)
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 7.5, 5, 16.5],
             "circle-color": "#000000",
             "circle-opacity": 0.35,
             "circle-blur": 0.5,
@@ -165,7 +173,8 @@ export default function Globe({ selectedId, onSelectChange }: GlobeProps) {
           type: "circle",
           source: "sites",
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 5, 5, 9],
+            // Radii reduced 25% from original (5→3.75, 9→6.75)
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 3.75, 5, 6.75],
             "circle-color": ["get", "color"],
             "circle-stroke-color": "#FFFFFF",
             "circle-stroke-width": 2,
