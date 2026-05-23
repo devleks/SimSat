@@ -34,7 +34,7 @@ export const SITES: Site[] = [
     lat: 12.95,
     lon: 14.25,
     category: "shrinkage",
-    capturedAt: "2024-01-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Lost ~90% of its surface area since the 1960s. 30M people across Chad, Niger, Nigeria, and Cameroon depend on it.",
   },
@@ -44,7 +44,7 @@ export const SITES: Site[] = [
     lat: 43.8,
     lon: 59.1,
     category: "shrinkage",
-    capturedAt: "2024-01-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Once the world's 4th-largest lake. Diverted for Soviet cotton irrigation; southern basin nearly dry.",
   },
@@ -54,7 +54,7 @@ export const SITES: Site[] = [
     lat: 37.6,
     lon: 46.0,
     category: "shrinkage",
-    capturedAt: "2024-07-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Hypersaline lake, NW Iran. Lost ~80% volume since the 1970s due to upstream damming.",
   },
@@ -64,7 +64,7 @@ export const SITES: Site[] = [
     lat: 31.8,
     lon: 35.55,
     category: "shrinkage",
-    capturedAt: "2024-04-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Dropping ~1m/year. Jordan River diversion and mineral extraction. Lowest point on Earth.",
   },
@@ -74,7 +74,7 @@ export const SITES: Site[] = [
     lat: 33.05,
     lon: -115.7,
     category: "shrinkage",
-    capturedAt: "2024-10-01",
+    capturedAt: "2026-05-23",
     blurb:
       "California's largest lake, accidentally created in 1905. Agricultural runoff source declining; shoreline retreats.",
   },
@@ -85,7 +85,7 @@ export const SITES: Site[] = [
     lat: 0.05,
     lon: 34.2,
     category: "flooding",
-    capturedAt: "2024-07-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Africa's largest lake. Recent flood episodes have submerged shoreline communities and infrastructure.",
   },
@@ -95,7 +95,7 @@ export const SITES: Site[] = [
     lat: 13.05,
     lon: 103.85,
     category: "flooding",
-    capturedAt: "2024-10-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Cambodia's life-source lake. Annual flood reversal of the Mekong tributary; fisheries collapsing.",
   },
@@ -105,7 +105,7 @@ export const SITES: Site[] = [
     lat: -19.8,
     lon: 23.1,
     category: "flooding",
-    capturedAt: "2024-07-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Inland delta in Botswana. Pulse-flooded every dry season. UNESCO World Heritage site.",
   },
@@ -115,7 +115,7 @@ export const SITES: Site[] = [
     lat: -2.55,
     lon: 40.52,
     category: "flooding",
-    capturedAt: "2024-07-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Kenya's longest river. Delta supports pastoralist communities; large-scale irrigation pressure.",
   },
@@ -125,7 +125,7 @@ export const SITES: Site[] = [
     lat: -0.8,
     lon: -50.2,
     category: "flooding",
-    capturedAt: "2024-07-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Mouth of the Amazon. Tidal-influenced; deforestation upstream is changing sediment regimes.",
   },
@@ -135,7 +135,7 @@ export const SITES: Site[] = [
     lat: 45.2,
     lon: 29.4,
     category: "flooding",
-    capturedAt: "2024-10-01",
+    capturedAt: "2026-05-23",
     blurb: "Europe's largest river delta. Romania/Ukraine border; protected wetland complex.",
   },
   {
@@ -144,7 +144,7 @@ export const SITES: Site[] = [
     lat: -5.85,
     lon: 13.05,
     category: "flooding",
-    capturedAt: "2024-04-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Lower Congo gorge near the Atlantic. Persistent cloud cover; one of the world's most data-poor large rivers.",
   },
@@ -155,7 +155,7 @@ export const SITES: Site[] = [
     lat: 45.55,
     lon: 10.68,
     category: "mixed",
-    capturedAt: "2024-07-01",
+    capturedAt: "2026-05-23",
     blurb: "Italy's largest lake. Drought-stressed alpine fed; Po Valley irrigation downstream.",
   },
   {
@@ -164,7 +164,7 @@ export const SITES: Site[] = [
     lat: 10.05,
     lon: 105.65,
     category: "mixed",
-    capturedAt: "2024-10-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Vietnam's rice bowl. Saltwater intrusion advancing 90km inland from upstream damming and sea-level rise.",
   },
@@ -174,7 +174,7 @@ export const SITES: Site[] = [
     lat: 3.5,
     lon: 36.05,
     category: "mixed",
-    capturedAt: "2024-10-01",
+    capturedAt: "2026-05-23",
     blurb:
       "World's largest desert lake. Threatened by Ethiopia's Gibe III dam reducing Omo River inflow.",
   },
@@ -184,7 +184,7 @@ export const SITES: Site[] = [
     lat: -15.85,
     lon: -70.02,
     category: "mixed",
-    capturedAt: "2024-07-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Highest commercially navigable lake on Earth. Glacial-fed; receding ice and pollution stress.",
   },
@@ -194,7 +194,7 @@ export const SITES: Site[] = [
     lat: 31.4,
     lon: 30.4,
     category: "mixed",
-    capturedAt: "2024-01-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Source of Egypt's agriculture. Sea-level rise, subsidence, salinization; population pressure.",
   },
@@ -204,7 +204,7 @@ export const SITES: Site[] = [
     lat: 4.6,
     lon: 36.15,
     category: "mixed",
-    capturedAt: "2024-10-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Flows into Lake Turkana from Ethiopia. Gibe III dam altering downstream hydrology since 2015.",
   },
@@ -214,7 +214,7 @@ export const SITES: Site[] = [
     lat: 30.9,
     lon: 47.4,
     category: "mixed",
-    capturedAt: "2024-07-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Iraq's southern marshlands. Drained under Saddam Hussein; partial restoration ongoing.",
   },
@@ -224,7 +224,7 @@ export const SITES: Site[] = [
     lat: 5.3,
     lon: 5.3,
     category: "mixed",
-    capturedAt: "2024-07-01",
+    capturedAt: "2026-05-23",
     blurb:
       "Nigeria's oil-producing delta. Mangrove loss, oil pollution, and population pressure.",
   },
