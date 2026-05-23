@@ -2562,6 +2562,13 @@ on container cold-start and cached on the auto-created
 `aquaveritas-hf-cache` Modal volume — the first weekly run downloads,
 subsequent runs reuse the cache.
 
+The SimSat fetch backend doesn't run via docker inside the Modal
+container (no Docker daemon in Modal functions). Instead, the upstream
+SimSat FastAPI surface is vendored at `scripts/vendored_sim/` (60kB,
+just `api.py` + `ImagingProviders/`) and started with uvicorn on :9005
+at runtime. See `scripts/vendored_sim/README.md` for the resync recipe
+when SimSat upstream changes.
+
 **Sample output (modal deploy):**
 ```
 ✓ Created objects.
@@ -2644,6 +2651,15 @@ on merge.
 
 ## Changelog
 
+- **2026-05-23** — Modal cron made deployable end-to-end. Vendored the
+  SimSat FastAPI surface (`scripts/vendored_sim/`, api.py + ImagingProviders)
+  so the Modal container no longer needs docker-in-docker — uvicorn runs
+  the API directly on :9005. Bumped `llama-server --ctx-size 4096 → 8192`
+  (proven during local refresh — two Sentinel-2 images tokenize to ~5600
+  tokens, overflowing 4096). Added pip deps for the slim sim subset
+  (fastapi, uvicorn, pyorbital, pystac-client, odc-stac, rasterio,
+  matplotlib) and the rasterio/expat workaround from upstream Dockerfile.sim.
+  Setup is now 3 commands: `modal token new`, `modal secret create`, `modal deploy`.
 - **2026-05-23** — Added §15 Weekly Tile Refresh (Option 2 from
   `docs/LIVE_DATA_OPTIONS.md`). `scripts/refresh_tiles.py` is the
   workhorse: SimSat fetch → llama-server inference → WebP + predictions.json
