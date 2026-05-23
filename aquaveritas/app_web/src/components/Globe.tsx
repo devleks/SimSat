@@ -121,9 +121,9 @@ export default function Globe({ selectedId, onSelectChange }: GlobeProps) {
       // maxBounds constrains the viewport centre so the earth cannot be
       // dragged fully off-screen. Globe projection wraps longitude, but
       // without a latitude bound the user can pan north/south until the
-      // sphere sits in a corner. [-180,-85,180,85] is the full Mercator
-      // extent; the globe will always be roughly centred.
-      maxBounds: [[-180, -85], [180, 85]],
+      // sphere sits in a corner. Flat [W,S,E,N] form avoids the nested-
+      // array parse path that triggers MapLibre's n[0] TypeError.
+      maxBounds: [-180, -85, 180, 85] as [number, number, number, number],
       pitch: 0,
       bearing: 0,
       attributionControl: { compact: true },
