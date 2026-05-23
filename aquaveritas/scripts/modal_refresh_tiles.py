@@ -8,7 +8,9 @@ Architecture:
     Container: aquaveritas-refresh
         ├─ Clones git repo at HEAD
         ├─ Boots SimSat docker-compose stack (postgres + simsat API)
-        ├─ Boots llama-server with the fine-tuned GGUF on :8080
+        ├─ Pulls fine-tuned GGUF + mmproj from HuggingFace
+        │   (Arty1001/aquaveritas-lfm-GGUF, cached on Modal volume)
+        ├─ Boots llama-server with the GGUF on :8080
         ├─ Runs `python scripts/refresh_tiles.py` (writes WebPs + JSON)
         └─ Commits changes on branch `refresh/<ISO_DATE>` + opens a PR via `gh`
 
@@ -23,9 +25,9 @@ Why one container does it all:
 Setup (one-time):
     modal token new                                       # auth Modal
     modal secret create gh-token-aquaveritas GH_TOKEN=... # for PR opening
-    # Volume `aquaveritas-data` already exists and contains the fused GGUF
-    # at /gguf/aquaveritas-lfm-q8_0.gguf — mmproj is bundled in. No further
-    # upload needed.
+    # Model is pulled from HuggingFace on container cold-start — no Modal
+    # volume needed. The download is cached in /root/.cache/huggingface
+    # which lives on a small persistent volume so the second run is fast.
     modal deploy scripts/modal_refresh_tiles.py           # ships the cron
 
 Manual trigger (no waiting for Monday):
@@ -58,6 +60,7 @@ image = (
         "openai>=1.40",          # llama-server is OpenAI-compatible
         "anthropic>=0.34",       # imported by evaluator.py even if unused here
         "psycopg2-binary>=2.9",  # imported by db.py even if unused here
+        "huggingface_hub>=0.24", # for pulling the GGUF + mmproj from HF
     )
     .run_commands(
         # Build llama.cpp (CPU-only; the model is 450M params, fine on CPU).
@@ -68,11 +71,15 @@ image = (
 
 app = modal.App(APP_NAME, image=image)
 
-# Persistent volumes — `aquaveritas-data` already holds the fused GGUF at
-# /gguf/aquaveritas-lfm-q8_0.gguf (mmproj baked in, no separate file needed).
-data_vol = modal.Volume.from_name("aquaveritas-data", create_if_missing=False)
-GGUF_PATH = "/data/gguf/aquaveritas-lfm-q8_0.gguf"
-GH_SECRET = modal.Secret.from_name("gh-token-aquaveritas")  # exports GH_TOKEN
+# Model is pulled from HF on cold-start. Cache lives on a small persistent
+# volume so subsequent weekly runs don't re-download the ~640MB total.
+hf_cache_vol = modal.Volume.from_name(
+    "aquaveritas-hf-cache", create_if_missing=True,
+)
+HF_REPO    = "Arty1001/aquaveritas-lfm-GGUF"
+GGUF_FILE  = "aquaveritas-lfm-q8_0.gguf"          # 451 MB, Q8_0 backbone
+MMPROJ_FILE = "mmproj-aquaveritas-lfm-F16.gguf"   # 189 MB, vision encoder
+GH_SECRET  = modal.Secret.from_name("gh-token-aquaveritas")  # exports GH_TOKEN
 
 REPO_URL  = "https://github.com/devleks/AquaVeritas.git"  # adjust if forked
 REPO_BRANCH = "main"
@@ -91,7 +98,7 @@ def _run(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> st
 
 @app.function(
     timeout=60 * 60,                       # 1 hour upper bound
-    volumes={"/data": data_vol},
+    volumes={"/root/.cache/huggingface": hf_cache_vol},
     secrets=[GH_SECRET],
     # cpu/memory: 4 vCPU + 8GB is plenty for 450M Q8_0 inference at 20 sites.
     cpu=4.0,
@@ -117,11 +124,19 @@ def refresh() -> dict:
     # for a once-a-week job.
     time.sleep(15)
 
-    # ── 3. Boot llama-server with the fine-tuned GGUF ────────────────────────
-    # mmproj is fused into the backbone — no --mmproj flag needed.
+    # ── 3. Pull GGUF + mmproj from HuggingFace (cached on volume) ────────────
+    from huggingface_hub import hf_hub_download
+    print(f"Pulling {HF_REPO} (cached: {hf_cache_vol})…")
+    gguf_path = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE)
+    mmproj_path = hf_hub_download(repo_id=HF_REPO, filename=MMPROJ_FILE)
+    print(f"  backbone: {gguf_path}")
+    print(f"  mmproj:   {mmproj_path}")
+
+    # ── 4. Boot llama-server with the fine-tuned GGUF + mmproj ───────────────
     llama_proc = subprocess.Popen([
         "/opt/llama.cpp/build/bin/llama-server",
-        "--model",  GGUF_PATH,
+        "--model",  gguf_path,
+        "--mmproj", mmproj_path,
         "--port",   "8080",
         "--host",   "127.0.0.1",
         "--ctx-size", "4096",
@@ -131,7 +146,7 @@ def refresh() -> dict:
     time.sleep(20)
 
     try:
-        # ── 4. Run the refresh ───────────────────────────────────────────────
+        # ── 5. Run the refresh ───────────────────────────────────────────────
         _run(
             ["python", "scripts/refresh_tiles.py",
              "--llama-url",  "http://127.0.0.1:8080",
@@ -139,7 +154,7 @@ def refresh() -> dict:
             cwd=repo,
         )
 
-        # ── 5. Commit + push branch + open PR ────────────────────────────────
+        # ── 6. Commit + push branch + open PR ────────────────────────────────
         branch = f"refresh/{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
         env = {**os.environ, "GIT_AUTHOR_NAME": "AquaVeritas Refresh Bot",
                "GIT_AUTHOR_EMAIL": "refresh-bot@aquaveritas.local",

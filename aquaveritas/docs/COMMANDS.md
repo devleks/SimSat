@@ -2549,16 +2549,18 @@ inside a container that has llama.cpp + the SimSat docker stack baked in.
 # 1. Auth Modal
 modal token new
 
-# 2. Confirm the fused GGUF is in place (one-time check; already uploaded)
-modal volume ls aquaveritas-data /gguf
-# Expect: aquaveritas-lfm-q8_0.gguf (~430 MiB, mmproj fused in)
-
-# 3. Provide a GitHub token for PR opening (needs `repo` + `pull_request` scope)
+# 2. Provide a GitHub token for PR opening (needs `repo` + `pull_request` scope)
 modal secret create gh-token-aquaveritas GH_TOKEN=ghp_xxxxxxxxxxxx
 
-# 4. Deploy
+# 3. Deploy
 modal deploy scripts/modal_refresh_tiles.py
 ```
+
+The model (backbone + mmproj, ~640MB total) is pulled from
+[Arty1001/aquaveritas-lfm-GGUF](https://huggingface.co/Arty1001/aquaveritas-lfm-GGUF)
+on container cold-start and cached on the auto-created
+`aquaveritas-hf-cache` Modal volume — the first weekly run downloads,
+subsequent runs reuse the cache.
 
 **Sample output (modal deploy):**
 ```
