@@ -21,9 +21,15 @@ import {
  * `onSelectChange`. The detail / inference panel is rendered by the parent
  * (/globe page) using GlobeInferencePanel.
  *
- * Tile source: CARTO dark_nolabels + dark_only_labels — public CDN with
- * explicit CORS for any-origin use. Deep-ocean aesthetic that fits the
- * AquaVeritas brand and lets warm-ochre site dots read clearly.
+ * Basemap: NASA EOSDIS GIBS — VIIRS_SNPP_CorrectedReflectance_TrueColor
+ * (daily global imagery, ~250m, no auth, CORS-friendly). Genuinely "live":
+ * the URL is date-parameterized and we request today-2-days to guarantee
+ * the global mosaic is fully processed. See docs/LIVE_DATA_OPTIONS.md for
+ * the full provider comparison and why GIBS won.
+ *
+ * Upgrade paths (one URL swap each):
+ *   - EOX s2cloudless     — crisper Sentinel-2 10m, static yearly composite
+ *   - Sentinel Hub WMS    — live Sentinel-2 10m, requires free account
  *
  * Container sizing note: the inner ref div uses explicit `h-full w-full`
  * (NOT `absolute inset-0`). MapLibre adds `.maplibregl-map { position:
@@ -32,6 +38,16 @@ import {
  * long debug session to find this; do not "simplify" back to absolute
  * positioning without re-verifying tile rendering.
  */
+
+/**
+ * Date string for the GIBS VIIRS tile URL. Two-day lag guarantees the
+ * global mosaic is fully processed (VIIRS has ~3h latency plus processing).
+ */
+function getLiveBasemapDate(): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 2);
+  return d.toISOString().slice(0, 10);
+}
 
 export interface GlobeProps {
   selectedId: string | null;
@@ -78,38 +94,25 @@ export default function Globe({ selectedId, onSelectChange }: GlobeProps) {
       return;
     }
 
+    const liveDate = getLiveBasemapDate();
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: {
         version: 8,
         sources: {
-          carto: {
+          viirs: {
             type: "raster",
             tiles: [
-              "https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png",
-              "https://b.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png",
-              "https://c.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png",
-              "https://d.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png",
+              `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${liveDate}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`,
             ],
             tileSize: 256,
-            attribution:
-              '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-          },
-          "carto-labels": {
-            type: "raster",
-            tiles: [
-              "https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png",
-              "https://b.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png",
-              "https://c.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png",
-              "https://d.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png",
-            ],
-            tileSize: 256,
+            // VIIRS Level9 maxzoom = 9. Beyond that we'd need a different
+            // GIBS layer or a higher-resolution provider.
+            maxzoom: 9,
+            attribution: `NASA EOSDIS GIBS · VIIRS SNPP True Color · ${liveDate}`,
           },
         },
-        layers: [
-          { id: "carto-base", type: "raster", source: "carto" },
-          { id: "carto-labels", type: "raster", source: "carto-labels" },
-        ],
+        layers: [{ id: "viirs", type: "raster", source: "viirs" }],
         glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
       },
       center: [14.25, 12.95], // Lake Chad
@@ -141,14 +144,19 @@ export default function Globe({ selectedId, onSelectChange }: GlobeProps) {
           type: "geojson",
           data: { type: "FeatureCollection", features: [] },
         });
+        // Dot styling adapted for the bright VIIRS true-color basemap:
+        // - Dark soft shadow underneath for contrast against bright land
+        // - Slightly larger dot than the CARTO version
+        // - Thicker white stroke so the colour reads against any backdrop
         map.addLayer({
           id: "sites-halo",
           type: "circle",
           source: "sites",
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 8, 5, 18],
-            "circle-color": ["get", "color"],
-            "circle-opacity": 0.22,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 10, 5, 22],
+            "circle-color": "#000000",
+            "circle-opacity": 0.35,
+            "circle-blur": 0.5,
             "circle-stroke-width": 0,
           },
         });
@@ -157,11 +165,11 @@ export default function Globe({ selectedId, onSelectChange }: GlobeProps) {
           type: "circle",
           source: "sites",
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 4, 5, 7],
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 5, 5, 9],
             "circle-color": ["get", "color"],
             "circle-stroke-color": "#FFFFFF",
-            "circle-stroke-width": 1.5,
-            "circle-stroke-opacity": 0.95,
+            "circle-stroke-width": 2,
+            "circle-stroke-opacity": 1,
           },
         });
 
