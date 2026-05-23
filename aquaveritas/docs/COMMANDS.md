@@ -2478,7 +2478,7 @@ python3 scripts/refresh_tiles.py --site lake_chad
 === AquaVeritas weekly tile refresh — 2026-05-23 ===
   sites:      1
   llama:      http://localhost:8080
-  simsat:     http://localhost:9005
+  fetcher:    direct STAC (Element84 Earth Search v1)
   dry-run:    False
 
   → Lake Chad                ✓ shrinking  crop=moderate webp=  62kB
@@ -2562,12 +2562,16 @@ on container cold-start and cached on the auto-created
 `aquaveritas-hf-cache` Modal volume — the first weekly run downloads,
 subsequent runs reuse the cache.
 
-The SimSat fetch backend doesn't run via docker inside the Modal
-container (no Docker daemon in Modal functions). Instead, the upstream
-SimSat FastAPI surface is vendored at `scripts/vendored_sim/` (60kB,
-just `api.py` + `ImagingProviders/`) and started with uvicorn on :9005
-at runtime. See `scripts/vendored_sim/README.md` for the resync recipe
-when SimSat upstream changes.
+Sentinel-2 imagery is fetched direct from the public Element84 Earth
+Search v1 STAC catalogue via `src/aquaveritas/sentinel_fetcher.py` — no
+SimSat backend running anywhere. This decouples the refresh from
+SimSat's AGPLv3 license entirely. The fetcher is ~200 lines over
+pystac-client (BSD-3) + odc-stac (Apache-2) + rasterio (BSD-3) + PIL
+(HPND). No auth, no rate limit, no setup.
+
+`refresh_tiles.py` therefore no longer has a `--simsat-url` flag, and
+running it locally no longer needs `docker compose up`. Only
+`llama-server` needs to be running.
 
 **Sample output (modal deploy):**
 ```
@@ -2651,6 +2655,14 @@ on merge.
 
 ## Changelog
 
+- **2026-05-23** — Decoupled the weekly refresh from SimSat's AGPLv3
+  license entirely. Replaced the vendored SimSat FastAPI surface with
+  `src/aquaveritas/sentinel_fetcher.py` (clean-room ~200 LOC over
+  pystac-client BSD-3 + odc-stac Apache-2 + rasterio BSD-3 + PIL HPND).
+  Deleted `scripts/vendored_sim/`. `refresh_tiles.py` no longer takes
+  `--simsat-url`; local runs no longer need `docker compose up`. Modal
+  image dropped ~40% in size (no fastapi/uvicorn/pyorbital/matplotlib).
+  Smoke-tested against lake_chad: 73kB WebP, 30s end-to-end.
 - **2026-05-23** — Modal cron made deployable end-to-end. Vendored the
   SimSat FastAPI surface (`scripts/vendored_sim/`, api.py + ImagingProviders)
   so the Modal container no longer needs docker-in-docker — uvicorn runs

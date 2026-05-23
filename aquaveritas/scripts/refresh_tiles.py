@@ -39,7 +39,7 @@ from PIL import Image  # noqa: E402 — sys.path append must precede
 
 from aquaveritas.evaluator import LlamaBackend  # noqa: E402
 from aquaveritas.locations import LOCATIONS, LOCATIONS_BY_ID  # noqa: E402
-from aquaveritas.simsat import SimSatClient  # noqa: E402
+from aquaveritas.sentinel_fetcher import fetch_location_images  # noqa: E402
 
 REPO_ROOT       = Path(__file__).parent.parent
 WEB_PUBLIC_DIR  = REPO_ROOT / "app_web" / "public" / "sample_tiles"
@@ -109,7 +109,6 @@ def _patch_captured_at(site_id: str, iso_date: str) -> bool:
 
 def refresh_one(
     location_id: str,
-    client: SimSatClient,
     backend: LlamaBackend | None,
     today_iso: str,
     dry_run: bool,
@@ -122,7 +121,7 @@ def refresh_one(
     loc = LOCATIONS_BY_ID[location_id]
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    images = client.fetch_location_images(
+    images = fetch_location_images(
         lon=loc.lon, lat=loc.lat, timestamp=timestamp, location_id=loc.id,
     )
     if not images.any_core_available:
@@ -160,8 +159,6 @@ def main() -> int:
     parser.add_argument("--site", help="Refresh only this site id (default: all 20)")
     parser.add_argument("--llama-url", default="http://localhost:8080",
                         help="llama-server base URL")
-    parser.add_argument("--simsat-url", default="http://localhost:9005",
-                        help="SimSat backend base URL")
     parser.add_argument("--dry-run", action="store_true",
                         help="Plan only: fetch images, skip inference and writes")
     args = parser.parse_args()
@@ -171,11 +168,10 @@ def main() -> int:
     print(f"=== AquaVeritas weekly tile refresh — {today_iso} ===")
     print(f"  sites:      {len(targets)}")
     print(f"  llama:      {args.llama_url}")
-    print(f"  simsat:     {args.simsat_url}")
+    print(f"  fetcher:    direct STAC (Element84 Earth Search v1)")
     print(f"  dry-run:    {args.dry_run}")
     print()
 
-    client  = SimSatClient(base_url=args.simsat_url)
     backend = LlamaBackend(base_url=args.llama_url) if not args.dry_run else None
 
     # Load + (optionally) update predictions.json in one pass.
@@ -187,7 +183,7 @@ def main() -> int:
     for loc in targets:
         print(f"  → {loc.name:<24} ", end="", flush=True)
         try:
-            prediction, msg = refresh_one(loc.id, client, backend, today_iso, args.dry_run)
+            prediction, msg = refresh_one(loc.id, backend, today_iso, args.dry_run)
         except Exception as exc:  # noqa: BLE001 — per-site isolation is the point
             prediction, msg = None, f"exception: {type(exc).__name__}: {exc}"
         print(msg)

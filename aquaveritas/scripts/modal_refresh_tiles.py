@@ -7,21 +7,20 @@ Architecture:
         ▼
     Container: aquaveritas-refresh
         ├─ Clones git repo at HEAD
-        ├─ Starts vendored SimSat API (uvicorn api:api on :9005)
-        │   — no docker-in-docker; sources baked into the image at build time
         ├─ Pulls fine-tuned GGUF + mmproj from HuggingFace
         │   (Arty1001/aquaveritas-lfm-GGUF, cached on Modal volume)
         ├─ Boots llama-server with the GGUF on :8080 (--ctx-size 8192)
-        ├─ Runs `python scripts/refresh_tiles.py` (writes WebPs + JSON)
+        ├─ Runs `python scripts/refresh_tiles.py` — fetches imagery direct
+        │   from Element84 Earth Search STAC (no SimSat, no AGPL)
         └─ Commits changes on branch `refresh/<ISO_DATE>` + opens a PR via `gh`
 
-Why we vendor SimSat instead of running its docker-compose:
-    Modal functions don't have a Docker daemon inside them, so we can't
-    spin up the upstream `fakesat-sim` / `fakesat-dashboard` containers.
-    Instead we vendor just the FastAPI surface (`scripts/vendored_sim/`,
-    ~60kB) and run it with uvicorn. The endpoint refresh_tiles.py uses
-    (`/data/image/sentinel`) is stateless and needs neither the orbital
-    simulator nor the Django dashboard.
+Why no SimSat backend:
+    Earlier versions of this script vendored a copy of the upstream SimSat
+    FastAPI surface (AGPLv3) into the repo and ran uvicorn alongside
+    llama-server. That brought AGPL obligations into AquaVeritas. The
+    refresh_tiles.py path now uses `aquaveritas.sentinel_fetcher` —
+    a clean-room ~200 line module over pystac-client + odc-stac + rasterio
+    (all BSD/Apache/HPND), removing the AGPL surface entirely.
 
 Setup (one-time):
     modal token new                                       # auth Modal
@@ -45,19 +44,18 @@ import modal
 APP_NAME = "aquaveritas-refresh"
 
 # Container image. The build chain is:
-#   1. system deps for GDAL/rasterio (SentinelProvider uses pystac-client +
-#      odc-stac under the hood, both of which need GDAL bindings)
-#   2. Python deps for both the SimSat API and refresh_tiles.py
+#   1. system deps for GDAL/rasterio (odc-stac → rasterio → libgdal)
+#   2. Python deps: refresh_tiles + the direct STAC fetcher's stack
 #   3. llama.cpp built from source (CPU-only — model is 450M params)
-#   4. Vendored sim sources copied into /opt/sim
-#   5. expat workaround — same one Dockerfile.sim uses, otherwise rasterio
-#      fails to load on debian-slim
+#
+# We no longer need: docker.io, fastapi, uvicorn, pyorbital, matplotlib,
+# or the vendored sim sources. Image is ~40% smaller as a result.
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install(
         "git", "curl", "ca-certificates",
         "build-essential", "cmake", "gcc", "g++",
-        "libgdal-dev", "libexpat1", "libexpat1-dev",
+        "libgdal-dev",
     )
     .pip_install(
         # refresh_tiles + evaluator deps
@@ -67,35 +65,16 @@ image = (
         "anthropic>=0.34",       # imported by evaluator.py even if unused here
         "psycopg2-binary>=2.9",  # imported by db.py even if unused here
         "huggingface_hub>=0.24",
-        # SimSat API runtime — slimmed subset (no pyqt6/cartopy: those are
-        # GUI / map-rendering side and not pulled in by /data/image/sentinel).
-        # matplotlib IS needed despite seeming GUI-only — sentinel_provider
-        # uses its colour helpers for the SWIR composite.
-        "fastapi>=0.110",
-        "uvicorn>=0.27",
+        # Direct STAC fetcher stack (no SimSat, no AGPL)
         "numpy>=1.26",
-        "matplotlib>=3.8",
-        "pyorbital>=1.8",
-        "pystac-client>=0.7",
-        "odc-stac>=0.3",
-        "rasterio>=1.3",
+        "pystac-client>=0.7",    # BSD-3
+        "odc-stac>=0.3",         # Apache-2
+        "rasterio>=1.3",         # BSD-3
     )
     .run_commands(
         # Build llama.cpp (CPU-only is fine; 450M Q8_0 inferences in <2s/call).
         "git clone --depth 1 https://github.com/ggerganov/llama.cpp /opt/llama.cpp",
         "cd /opt/llama.cpp && cmake -B build && cmake --build build --config Release -j",
-        # Same rasterio/expat workaround as the upstream Dockerfile.sim.
-        # Without this, SentinelProvider raises 'libexpat.so.1 not found'.
-        "LIB_PATH=$(python3 -c \"import rasterio; from pathlib import Path; "
-        "print(Path(rasterio.__file__).parent / '../rasterio.libs')\") && "
-        "mkdir -p $LIB_PATH && "
-        "ln -sf /usr/lib/x86_64-linux-gnu/libexpat.so.1 $LIB_PATH/libexpat.so.1",
-        "ldconfig",
-    )
-    .add_local_dir(
-        local_path="scripts/vendored_sim",
-        remote_path="/opt/sim",
-        copy=True,  # bake into image, not mount at runtime
     )
 )
 
@@ -161,19 +140,7 @@ def refresh() -> dict:
          cwd=workdir)
     repo = workdir / "repo" / "aquaveritas"
 
-    # ── 2. Start vendored SimSat API (uvicorn) in the background ─────────────
-    sim_proc = subprocess.Popen(
-        ["uvicorn", "api:api", "--host", "127.0.0.1", "--port", "9005"],
-        cwd="/opt/sim",
-    )
-    _wait_for_http(
-        # /data/image/sentinel is the endpoint we use — but its 503-without-
-        # explicit-params behaviour means a GET probe is a fine readiness
-        # signal (any 4xx/5xx response means uvicorn is up).
-        "http://127.0.0.1:9005/docs", timeout_s=30, what="SimSat API",
-    )
-
-    # ── 3. Pull GGUF + mmproj from HuggingFace (cached on volume) ────────────
+    # ── 2. Pull GGUF + mmproj from HuggingFace (cached on volume) ────────────
     from huggingface_hub import hf_hub_download
     print(f"Pulling {HF_REPO} (cached: {hf_cache_vol})…")
     gguf_path   = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE)
@@ -181,7 +148,7 @@ def refresh() -> dict:
     print(f"  backbone: {gguf_path}")
     print(f"  mmproj:   {mmproj_path}")
 
-    # ── 4. Boot llama-server with the fine-tuned GGUF + mmproj ───────────────
+    # ── 3. Boot llama-server with the fine-tuned GGUF + mmproj ───────────────
     # --ctx-size 8192 because two Sentinel-2 images tokenize to ~5600 tokens
     # together; 4096 (the default) overflows. Proven during the 2026-05-23
     # local smoke test.
@@ -198,15 +165,15 @@ def refresh() -> dict:
     )
 
     try:
-        # ── 5. Run the refresh ───────────────────────────────────────────────
+        # ── 4. Run the refresh ───────────────────────────────────────────────
+        # No --simsat-url: the script now fetches imagery direct from STAC.
         _run(
             ["python", "scripts/refresh_tiles.py",
-             "--llama-url",  "http://127.0.0.1:8080",
-             "--simsat-url", "http://127.0.0.1:9005"],
+             "--llama-url",  "http://127.0.0.1:8080"],
             cwd=repo,
         )
 
-        # ── 6. Commit + push branch + open PR ────────────────────────────────
+        # ── 5. Commit + push branch + open PR ────────────────────────────────
         branch = f"refresh/{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
         env = {**os.environ,
                "GIT_AUTHOR_NAME":     "AquaVeritas Refresh Bot",
@@ -246,12 +213,11 @@ def refresh() -> dict:
         return {"run_id": run_id, "pr_opened": True, "pr_url": pr_url}
 
     finally:
-        for proc, name in ((llama_proc, "llama-server"), (sim_proc, "uvicorn")):
-            try:
-                proc.terminate()
-                proc.wait(timeout=10)
-            except Exception as exc:  # noqa: BLE001
-                print(f"  warning: {name} cleanup raised: {exc}")
+        try:
+            llama_proc.terminate()
+            llama_proc.wait(timeout=10)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  warning: llama-server cleanup raised: {exc}")
 
 
 @app.local_entrypoint()
