@@ -23,11 +23,9 @@ Why one container does it all:
 Setup (one-time):
     modal token new                                       # auth Modal
     modal secret create gh-token-aquaveritas GH_TOKEN=... # for PR opening
-    modal volume create aquaveritas-gguf                  # for the GGUF
-    modal volume put aquaveritas-gguf                     \\
-        data/models/aquaveritas-backbone-Q8_0.gguf /backbone.gguf
-    modal volume put aquaveritas-gguf                     \\
-        data/models/aquaveritas-mmproj-F16.gguf   /mmproj.gguf
+    # Volume `aquaveritas-data` already exists and contains the fused GGUF
+    # at /gguf/aquaveritas-lfm-q8_0.gguf — mmproj is bundled in. No further
+    # upload needed.
     modal deploy scripts/modal_refresh_tiles.py           # ships the cron
 
 Manual trigger (no waiting for Monday):
@@ -70,8 +68,10 @@ image = (
 
 app = modal.App(APP_NAME, image=image)
 
-# Persistent volumes
-gguf_vol = modal.Volume.from_name("aquaveritas-gguf", create_if_missing=False)
+# Persistent volumes — `aquaveritas-data` already holds the fused GGUF at
+# /gguf/aquaveritas-lfm-q8_0.gguf (mmproj baked in, no separate file needed).
+data_vol = modal.Volume.from_name("aquaveritas-data", create_if_missing=False)
+GGUF_PATH = "/data/gguf/aquaveritas-lfm-q8_0.gguf"
 GH_SECRET = modal.Secret.from_name("gh-token-aquaveritas")  # exports GH_TOKEN
 
 REPO_URL  = "https://github.com/devleks/AquaVeritas.git"  # adjust if forked
@@ -91,7 +91,7 @@ def _run(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> st
 
 @app.function(
     timeout=60 * 60,                       # 1 hour upper bound
-    volumes={"/models": gguf_vol},
+    volumes={"/data": data_vol},
     secrets=[GH_SECRET],
     # cpu/memory: 4 vCPU + 8GB is plenty for 450M Q8_0 inference at 20 sites.
     cpu=4.0,
@@ -118,10 +118,10 @@ def refresh() -> dict:
     time.sleep(15)
 
     # ── 3. Boot llama-server with the fine-tuned GGUF ────────────────────────
+    # mmproj is fused into the backbone — no --mmproj flag needed.
     llama_proc = subprocess.Popen([
         "/opt/llama.cpp/build/bin/llama-server",
-        "--model",  "/models/backbone.gguf",
-        "--mmproj", "/models/mmproj.gguf",
+        "--model",  GGUF_PATH,
         "--port",   "8080",
         "--host",   "127.0.0.1",
         "--ctx-size", "4096",

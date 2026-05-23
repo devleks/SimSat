@@ -2549,12 +2549,9 @@ inside a container that has llama.cpp + the SimSat docker stack baked in.
 # 1. Auth Modal
 modal token new
 
-# 2. Mount the GGUF model files in a Modal volume
-modal volume create aquaveritas-gguf
-modal volume put aquaveritas-gguf \
-  data/models/aquaveritas-backbone-Q8_0.gguf /backbone.gguf
-modal volume put aquaveritas-gguf \
-  data/models/aquaveritas-mmproj-F16.gguf   /mmproj.gguf
+# 2. Confirm the fused GGUF is in place (one-time check; already uploaded)
+modal volume ls aquaveritas-data /gguf
+# Expect: aquaveritas-lfm-q8_0.gguf (~430 MiB, mmproj fused in)
 
 # 3. Provide a GitHub token for PR opening (needs `repo` + `pull_request` scope)
 modal secret create gh-token-aquaveritas GH_TOKEN=ghp_xxxxxxxxxxxx
