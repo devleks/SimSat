@@ -118,12 +118,6 @@ export default function Globe({ selectedId, onSelectChange }: GlobeProps) {
       center: [14.25, 12.95], // Lake Chad
       zoom: 1.5,
       minZoom: 1.0,
-      // maxBounds constrains the viewport centre so the earth cannot be
-      // dragged fully off-screen. Globe projection wraps longitude, but
-      // without a latitude bound the user can pan north/south until the
-      // sphere sits in a corner. Flat [W,S,E,N] form avoids the nested-
-      // array parse path that triggers MapLibre's n[0] TypeError.
-      maxBounds: [-180, -85, 180, 85] as [number, number, number, number],
       pitch: 0,
       bearing: 0,
       attributionControl: { compact: true },
@@ -143,6 +137,21 @@ export default function Globe({ selectedId, onSelectChange }: GlobeProps) {
       }
       // Belt-and-suspenders resize after first frame.
       requestAnimationFrame(() => map.resize());
+
+      // Latitude clamp — constructor `maxBounds` triggers a MapLibre
+      // n[0] TypeError on globe projection under Turbopack. Instead we
+      // listen for `move` and snap the centre back if the user drags
+      // past the polar caps, which is where "globe slides off-screen"
+      // actually happens (longitude wraps cleanly on a sphere; latitude
+      // does not). 82° of latitude leaves both poles visible at the
+      // initial zoom without letting the sphere drift into a corner.
+      const LAT_MAX = 82;
+      map.on("move", () => {
+        const c = map.getCenter();
+        if (c.lat > LAT_MAX || c.lat < -LAT_MAX) {
+          map.setCenter([c.lng, Math.max(-LAT_MAX, Math.min(LAT_MAX, c.lat))]);
+        }
+      });
     });
 
     map.on("style.load", () => {
